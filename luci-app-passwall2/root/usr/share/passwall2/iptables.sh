@@ -25,6 +25,8 @@ FWI=$(uci -q get firewall.passwall2.path 2>/dev/null)
 FAKE_IP="198.18.0.0/16"
 FAKE_IP_6="fc00::/18"
 
+TMP_TUN_PATH=/tmp/etc/passwall2/tun
+
 factor() {
 	if [ -z "$1" ] || [ -z "$2" ]; then
 		echo ""
@@ -116,6 +118,12 @@ REDIRECT() {
 		[ "$2" == "TPROXY" ] && {
 			local mark="-m mark --mark 1"
 			s="${mark} -j TPROXY --tproxy-mark 0x1/0x1 --on-port $1"
+			#懒得大改，暂时这样。。。 TO DO
+			if [ -s "${TMP_TUN_PATH}/$1" ]; then
+				s="-j MARK --set-mark $1"
+				local tun_name=$(cat ${TMP_TUN_PATH}/$1)
+				[ "${tun_name}" = "psw2_global" ] && s="-j MARK --set-mark 1"
+			fi
 		}
 	}
 	echo $s
@@ -635,7 +643,7 @@ add_firewall_rule() {
 	
 	$ipt_m -N PSW2_RULE
 	$ipt_m -A PSW2_RULE -j CONNMARK --restore-mark
-	$ipt_m -A PSW2_RULE -m mark --mark 0x1 -j RETURN
+	$ipt_m -A PSW2_RULE -m mark --mark 1 -j RETURN
 	$ipt_m -A PSW2_RULE -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j MARK --set-xmark 1
 	$ipt_m -A PSW2_RULE -p udp -m conntrack --ctstate NEW -j MARK --set-xmark 1
 	$ipt_m -A PSW2_RULE -j CONNMARK --save-mark
@@ -686,7 +694,7 @@ add_firewall_rule() {
 	
 	$ip6t_m -N PSW2_RULE
 	$ip6t_m -A PSW2_RULE -j CONNMARK --restore-mark
-	$ip6t_m -A PSW2_RULE -m mark --mark 0x1 -j RETURN
+	$ip6t_m -A PSW2_RULE -m mark --mark 1 -j RETURN
 	$ip6t_m -A PSW2_RULE -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j MARK --set-xmark 1
 	$ip6t_m -A PSW2_RULE -p udp -m conntrack --ctstate NEW -j MARK --set-xmark 1
 	$ip6t_m -A PSW2_RULE -j CONNMARK --save-mark
@@ -710,6 +718,41 @@ add_firewall_rule() {
 
 	ip -6 rule add fwmark 1 table 100
 	ip -6 route add local ::/0 dev lo table 100
+
+	#ip tuntap | grep "^psw2_" | awk -F ':' '{print $1}'
+	for flag in $(ls ${TMP_TUN_PATH}); do
+		sleep 3s
+		local table=${flag}
+		local tun_name=$(cat ${TMP_TUN_PATH}/${flag})
+		if [ "${tun_name}" = "psw2_global" ]; then
+			ip route replace 0.0.0.0/0 dev ${tun_name} table 100
+			ip -6 route replace ::/0 dev ${tun_name} table 100
+		else
+			#TO DO 暂无支持多个tun的计划
+			ip rule add fwmark ${flag} lookup ${table}
+			ip route add 0.0.0.0/0 dev ${tun_name} table ${table}
+			
+			ip -6 rule add fwmark ${flag} table ${table}
+			ip -6 route add ::/0 dev ${tun_name} table ${table}
+			
+			$ipt_m -I PSW2_DIVERT -j MARK --set-mark ${flag}
+			$ip6t_m -I PSW2_DIVERT -j MARK --set-mark ${flag}
+
+			$ipt_m -I PSW2_RULE 2 -m mark --mark ${flag} -j RETURN
+			$ipt_m -I PSW2_RULE 3 -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j MARK --set-xmark ${flag}
+			$ipt_m -I PSW2_RULE 4 -p udp -m conntrack --ctstate NEW -j MARK --set-xmark ${flag}
+			$ip6t_m -I PSW2_RULE 2 -m mark --mark ${flag} -j RETURN
+			$ip6t_m -I PSW2_RULE 3 -p tcp -m tcp --tcp-flags FIN,SYN,RST,ACK SYN -j MARK --set-xmark ${flag}
+			$ip6t_m -I PSW2_RULE 4 -p udp -m conntrack --ctstate NEW -j MARK --set-xmark ${flag}
+		fi
+		
+		$ipt -I INPUT -i $tun_name -j ACCEPT
+		$ip6t -I INPUT -i $tun_name -j ACCEPT
+		$ipt -I OUTPUT -o $tun_name -j ACCEPT
+		$ip6t -I OUTPUT -o $tun_name -j ACCEPT
+		$ipt -I FORWARD -o $tun_name -j ACCEPT
+		$ip6t -I FORWARD -o $tun_name -j ACCEPT
+	done
 	
 	# 过滤Socks节点
 	[ "$SOCKS_ENABLED" = "1" ] && {
@@ -838,6 +881,23 @@ add_firewall_rule() {
 }
 
 del_firewall_rule() {
+	for flag in $(ls ${TMP_TUN_PATH}); do
+		local table=${flag}
+		local tun_name=$(cat ${TMP_TUN_PATH}/${flag})
+		ip rule del fwmark ${flag} lookup ${table} 2>/dev/null
+		ip route del 0.0.0.0/0 dev ${tun_name} table ${table} 2>/dev/null
+		
+		ip -6 rule del fwmark ${flag} table ${table} 2>/dev/null
+		ip -6 route del ::/0 dev ${tun_name} table ${table} 2>/dev/null
+		
+		$ipt -D INPUT -i $tun_name -j ACCEPT
+		$ip6t -D INPUT -i $tun_name -j ACCEPT
+		$ipt -D OUTPUT -o $tun_name -j ACCEPT
+		$ip6t -D OUTPUT -o $tun_name -j ACCEPT
+		$ipt -D FORWARD -o $tun_name -j ACCEPT
+		$ip6t -D FORWARD -o $tun_name -j ACCEPT
+	done
+
 	for ipt in "$ipt_n" "$ipt_m" "$ip6t_n" "$ip6t_m"; do
 		for chain in "PREROUTING" "OUTPUT"; do
 			for i in $(seq 1 $($ipt -nL $chain | grep -c PSW2)); do

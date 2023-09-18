@@ -16,6 +16,8 @@ FWI=$(uci -q get firewall.passwall2.path 2>/dev/null)
 FAKE_IP="198.18.0.0/16"
 FAKE_IP_6="fc00::/18"
 
+TMP_TUN_PATH=/tmp/etc/passwall2/tun
+
 factor() {
 	if [ -z "$1" ] || [ -z "$2" ]; then
 		echo ""
@@ -99,6 +101,14 @@ REDIRECT() {
 		}
 		[ "$2" == "TPROXY6" ] && {
 			s="counter meta mark 1 tproxy ip6 to :$1"
+		}
+		#懒得大改，暂时这样。。。 TO DO
+		[ "$2" != "MARK" ] && {
+			if [ -s "${TMP_TUN_PATH}/$1" ]; then
+				s="counter meta mark set $1"
+				local tun_name=$(cat ${TMP_TUN_PATH}/$1)
+				[ "${tun_name}" = "psw2_global" ] && s="counter meta mark set 1"
+			fi
 		}
 
 	}
@@ -747,6 +757,28 @@ add_firewall_rule() {
 		ip -6 route add local ::/0 dev lo table 100
 	}
 	
+	#ip tuntap | grep "^psw2_" | awk -F ':' '{print $1}'
+	for flag in $(ls ${TMP_TUN_PATH}); do
+		sleep 3s
+		local table=${flag}
+		local tun_name=$(cat ${TMP_TUN_PATH}/${flag})
+		if [ "${tun_name}" = "psw2_global" ]; then
+			ip route replace 0.0.0.0/0 dev ${tun_name} table 100
+			ip -6 route replace ::/0 dev ${tun_name} table 100
+		else
+			#TO DO 暂无支持多个tun的计划
+			ip rule add fwmark ${flag} lookup ${table}
+			ip route add 0.0.0.0/0 dev ${tun_name} table ${table}
+			
+			ip -6 rule add fwmark ${flag} table ${table}
+			ip -6 route add ::/0 dev ${tun_name} table ${table}
+		fi
+		
+		nft insert rule inet fw4 input iif $tun_name counter accept
+		nft insert rule inet fw4 output oif $tun_name counter accept
+		nft insert rule inet fw4 forward oif $tun_name counter accept
+	done
+	
 	# 过滤Socks节点
 	[ "$SOCKS_ENABLED" = "1" ] && {
 		local ids=$(uci show $CONFIG | grep "=socks" | awk -F '.' '{print $2}' | awk -F '=' '{print $1}')
@@ -877,6 +909,19 @@ add_firewall_rule() {
 }
 
 del_firewall_rule() {
+	for flag in $(ls ${TMP_TUN_PATH}); do
+		local table=${flag}
+		local tun_name=$(cat ${TMP_TUN_PATH}/${flag})
+		ip rule del fwmark ${flag} lookup ${table} 2>/dev/null
+		ip route del 0.0.0.0/0 dev ${tun_name} table ${table} 2>/dev/null
+		
+		ip -6 rule del fwmark ${flag} table ${table} 2>/dev/null
+		ip -6 route del ::/0 dev ${tun_name} table ${table} 2>/dev/null
+		
+		nft delete rule inet fw4 input iif $tun_name counter accept
+		nft delete rule inet fw4 output oif $tun_name counter accept
+		nft delete rule inet fw4 forward oif $tun_name counter accept
+	done
 	for nft in "forward" "dstnat" "srcnat" "nat_output" "mangle_prerouting" "mangle_output"; do
         local handles=$(nft -a list chain inet fw4 ${nft} 2>/dev/null | grep -E "PSW2_" | awk -F '# handle ' '{print$2}')
 		for handle in $handles; do

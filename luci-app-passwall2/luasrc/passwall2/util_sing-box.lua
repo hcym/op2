@@ -838,7 +838,27 @@ function gen_config(var)
 		table.insert(inbounds, inbound)
 	end
 
+	local tun = "0"
+
 	if redir_port then
+		tun = singbox_settings.tun_instead_of_tproxy or "0"
+		if tun == "1" and flag == "global" then
+			table.insert(inbounds, {
+				type = "tun",
+				tag = "tun_in",
+				interface_name = "psw2_global",
+				inet4_address = "172.19.0.1/30",
+				inet6_address = "fdfe:dcba:9876::1/126",
+				mtu = 9000,
+				auto_route = false,
+				stack = "system",
+				sniff = true,
+				sniff_override_destination = (singbox_settings.sniff_override_destination == "1") and true or false,
+			})
+			sys.call("echo 'psw2_global' > /tmp/etc/passwall2/tun/" .. redir_port)
+		else
+			tun = "0"
+		end
 		local inbound_tproxy = {
 			type = "tproxy",
 			tag = "tproxy",
@@ -862,7 +882,9 @@ function gen_config(var)
 			inbound_tproxy.network = "udp"
 		end
 
-		table.insert(inbounds, inbound_tproxy)
+		if tun ~= "1" then
+			table.insert(inbounds, inbound_tproxy)
+		end
 	end
 	
 	local default_outTag = nil
@@ -1399,7 +1421,8 @@ function gen_config(var)
 		table.insert(route.rules, 1, {
 			protocol = "dns",
 			inbound = {
-				"dns-in"
+				"dns-in",
+				tun == "1" and "tun_in" or nil
 			},
 			outbound = "dns-out"
 		})
