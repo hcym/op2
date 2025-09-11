@@ -1,2 +1,2 @@
 README.txt
-pass2
+pass.2
