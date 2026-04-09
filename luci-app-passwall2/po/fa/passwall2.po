@@ -747,6 +747,12 @@ msgstr "ربودن ICMP (PING)"
 msgid "Hijacking ICMPv6 (IPv6 PING)"
 msgstr "ربودن ICMPv6 (IPv6 PING)"
 
+msgid "Force Proxy LAN IP"
+msgstr "IP پروکسی LAN را مجبور کنید"
+
+msgid "By default, commonly used internal network IP ranges will be connect directly (not entering the core). If you want a certain network range to go through a proxy, please add it here."
+msgstr "به طور پیش‌فرض، محدوده‌های IP شبکه داخلی که معمولاً استفاده می‌شوند، مستقیماً متصل می‌شوند (و وارد هسته نمی‌شوند). اگر می‌خواهید محدوده شبکه خاصی از طریق پروکسی عبور کند، لطفاً آن را اینجا اضافه کنید."
+
 msgid "Sniffing"
 msgstr "شنود (Sniffing)"
 
@@ -1632,14 +1638,14 @@ msgstr "اندازه بافر"
 msgid "Buffer size for every connection (kB)"
 msgstr "اندازه بافر برای هر اتصال (کیلوبایت)"
 
-msgid "Handshake Timeout"
-msgstr "مهلت زمانی دست تکان دادن"
-
 msgid "Idle Timeout"
 msgstr "مهلت زمانی بیکاری"
 
-msgid "Hop Interval"
-msgstr "بازه پرش (Hop)"
+msgid "Hop Interval(second)"
+msgstr "فاصله پرش (ثانیه)"
+
+msgid "Supports a fixed value or a random range (e.g., 30, 5-30), minimum 5."
+msgstr "از یک مقدار ثابت یا یک محدوده تصادفی (مثلاً 30، 5-30)، حداقل 5، پشتیبانی می‌کند."
 
 msgid "HeartbeatPeriod(second)"
 msgstr "دوره ضربان قلب (ثانیه)"
@@ -1757,6 +1763,12 @@ msgstr "تاخیر (میلی‌ثانیه)"
 
 msgid "If is domain name, The requested domain name will be resolved to IP before connect."
 msgstr "اگر نام دامنه است، نام دامنه درخواست شده قبل از اتصال به IP حل می‌شود."
+
+msgid "Domain DNS Resolve"
+msgstr "حل مشکل DNS دامنه"
+
+msgid "If the node address is a domain name, this DNS will be used for resolution."
+msgstr "اگر آدرس گره یک نام دامنه باشد، از این DNS برای حل مسئله استفاده خواهد شد."
 
 msgid "Chain Proxy"
 msgstr "پروکسی زنجیره‌ای"
